@@ -57,9 +57,14 @@ pub struct Client {
 }
 
 pub(crate) fn agent(recv_timeout: Option<Duration>) -> Agent {
+    agent_with_redirects(recv_timeout, 10)
+}
+
+fn agent_with_redirects(recv_timeout: Option<Duration>, max_redirects: u32) -> Agent {
     let tls = TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build();
     Agent::config_builder()
         .tls_config(tls)
+        .max_redirects(max_redirects)
         .http_status_as_error(false)
         .https_only(true)
         .user_agent(concat!("TV-Blind/", env!("CARGO_PKG_VERSION")))
@@ -113,8 +118,11 @@ impl Client {
     pub fn new(token: impl Into<String>) -> Self {
         Self {
             agent: agent(Some(Duration::from_mins(1))),
-            // Large files may take a while; only the connect/header phases time out.
-            download_agent: agent(None),
+            // Large files may take a while; only the connect/header phases time
+            // out. Redirects are followed by hand: ureq 3.4 fails with
+            // "chunk expected crlf" when it follows the API's chunked 302
+            // itself, while the same hops done one by one work.
+            download_agent: agent_with_redirects(None, 0),
             token: token.into(),
         }
     }
@@ -204,7 +212,7 @@ impl Client {
         let dest = unique_path(dir, &safe_file_name(&file.display_name()));
 
         // Prefer the tracked, authenticated endpoint; it redirects to the CDN
-        // (ureq drops the Authorization header on redirect). Fall back to the
+        // (see `fetch_to`, which keeps the token off the CDN). Fall back to the
         // direct links the file record carries.
         let mut candidates: Vec<(String, bool)> = Vec::new();
         if let Some(id) = file.id {
@@ -217,65 +225,97 @@ impl Client {
             return Err(ApiError::NoDownloadUrl);
         }
 
+        let part = dest.with_extension(match dest.extension() {
+            Some(e) => format!("{}.part", e.to_string_lossy()),
+            None => "part".into(),
+        });
         let mut last_err = ApiError::NoDownloadUrl;
         for (url, with_auth) in candidates {
-            let mut req = self.download_agent.get(&url);
-            if with_auth {
-                req = req.header("Authorization", self.auth());
-            }
-            let mut resp = match req.call() {
-                Ok(r) => r,
-                Err(e) => {
-                    last_err = e.into();
-                    continue;
-                }
-            };
-            let status = resp.status().as_u16();
-            let is_html = resp.body().mime_type() == Some("text/html");
-            if let Err(e) = check_status(status, String::new) {
-                last_err = e;
-                continue;
-            }
-            if is_html {
-                // A web page (login wall, etc.), not the file.
-                last_err = ApiError::Decode("got a web page instead of the file".into());
-                continue;
-            }
-            let total = resp.body().content_length().or(file.size);
-            let part = dest.with_extension(match dest.extension() {
-                Some(e) => format!("{}.part", e.to_string_lossy()),
-                None => "part".into(),
-            });
-            let result = (|| -> Result<()> {
-                let mut reader = resp.body_mut().as_reader();
-                let mut out = File::create(&part)?;
-                let mut buf = vec![0u8; 64 * 1024];
-                let mut done = 0u64;
-                loop {
-                    let n = reader.read(&mut buf).map_err(|e| ApiError::Network(e.to_string()))?;
-                    if n == 0 {
-                        break;
-                    }
-                    out.write_all(&buf[..n])?;
-                    done += n as u64;
-                    progress(done, total);
-                }
-                out.sync_all()?;
-                Ok(())
-            })();
-            match result {
+            match self.fetch_to(&url, with_auth, &part, file.size, &mut progress) {
                 Ok(()) => {
                     fs::rename(&part, &dest)?;
                     return Ok(dest);
                 }
                 Err(e) => {
                     let _ = fs::remove_file(&part);
-                    return Err(e);
+                    last_err = e;
                 }
             }
         }
         Err(last_err)
     }
+
+    /// Follows up to five redirects by hand and streams the final response
+    /// into `part`. The token only goes to the API host, never to the CDN.
+    fn fetch_to(
+        &self,
+        url: &str,
+        with_auth: bool,
+        part: &Path,
+        size_hint: Option<u64>,
+        progress: &mut impl FnMut(u64, Option<u64>),
+    ) -> Result<()> {
+        let mut url = url.to_string();
+        let mut resp = None;
+        for _ in 0..=5 {
+            let mut req = self.download_agent.get(&url);
+            if with_auth && is_api_url(&url) {
+                req = req.header("Authorization", self.auth());
+            }
+            let r = req.call()?;
+            if !r.status().is_redirection() {
+                resp = Some(r);
+                break;
+            }
+            let location = r
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| ApiError::Decode("redirect without a location".into()))?;
+            url = resolve_redirect(&url, location)?;
+        }
+        let mut resp = resp.ok_or_else(|| ApiError::Network("too many redirects".into()))?;
+
+        check_status(resp.status().as_u16(), String::new)?;
+        if resp.body().mime_type() == Some("text/html") {
+            // A web page (login wall, etc.), not the file.
+            return Err(ApiError::Decode("got a web page instead of the file".into()));
+        }
+        let total = resp.body().content_length().or(size_hint);
+        let mut reader = resp.body_mut().as_reader();
+        let mut out = File::create(part)?;
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut done = 0u64;
+        loop {
+            let n = reader.read(&mut buf).map_err(|e| ApiError::Network(e.to_string()))?;
+            if n == 0 {
+                break;
+            }
+            out.write_all(&buf[..n])?;
+            done += n as u64;
+            progress(done, total);
+        }
+        out.sync_all()?;
+        Ok(())
+    }
+}
+
+fn is_api_url(url: &str) -> bool {
+    url.starts_with(BASE_URL) && matches!(url.as_bytes().get(BASE_URL.len()), None | Some(b'/' | b'?'))
+}
+
+/// Absolute HTTPS URL for a `Location` header, which may be relative.
+fn resolve_redirect(current: &str, location: &str) -> Result<String> {
+    let next = if location.starts_with("https://") {
+        location.to_string()
+    } else if location.starts_with('/') && !location.starts_with("//") {
+        // Scheme and host of the current URL, then the new path.
+        let host_end = current.get(8..).and_then(|rest| rest.find('/')).map_or(current.len(), |i| i + 8);
+        format!("{}{location}", &current[..host_end])
+    } else {
+        return Err(ApiError::Decode("redirect to an unsupported address".into()));
+    };
+    Ok(next)
 }
 
 pub fn safe_file_name(name: &str) -> String {
@@ -309,6 +349,21 @@ mod tests {
     fn encodes_path_segment() {
         assert_eq!(encode_segment("benchy boat/2"), "benchy%20boat%2F2");
         assert_eq!(encode_segment("süß"), "s%C3%BC%C3%9F");
+    }
+
+    #[test]
+    fn redirects_resolve_and_auth_stays_on_api_host() {
+        let cur = "https://api.thingiverse.com/files/1/download";
+        assert_eq!(
+            resolve_redirect(cur, "https://cdn.thingiverse.com/a.stl").unwrap(),
+            "https://cdn.thingiverse.com/a.stl"
+        );
+        assert_eq!(resolve_redirect(cur, "/files/2/download").unwrap(), "https://api.thingiverse.com/files/2/download");
+        assert!(resolve_redirect(cur, "http://cdn.thingiverse.com/a.stl").is_err());
+        assert!(resolve_redirect(cur, "//evil.example/a").is_err());
+        assert!(is_api_url(cur));
+        assert!(!is_api_url("https://cdn.thingiverse.com/a.stl"));
+        assert!(!is_api_url("https://api.thingiverse.com.evil.example/x"));
     }
 
     #[test]
