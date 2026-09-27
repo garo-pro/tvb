@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "tools/sign"]
+
 [package]
 name = "tvb"
 version = "0.1.0"
@@ -19,8 +22,13 @@ html2text = "0.17.1"
 sanitize-filename = "0.7.0-beta"
 opener = "0.8.5"
 prism = { git = "https://github.com/garo-pro/prism2rust" }
+# Auto-updater for wxDragon apps; pinned until 0.3 is on crates.io.
+ship-shape = { git = "https://github.com/trypsynth/ship-shape", rev = "ba2c35dbe3befa52552d5bf579d6aed35bffe43e" }
 # Direct dependency so build.rs sees DEP_PRISM_DELAYLOAD for the static link.
 prism-sys = { git = "https://github.com/garo-pro/prism2rust" }
+
+[lints]
+workspace = true
 
 [build-dependencies]
 embed-manifest = "1.5.1"
@@ -30,14 +38,14 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 
-[lints.rust]
+[workspace.lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "allow"
 rust_2018_idioms = { level = "warn", priority = -1 }
 unused_qualifications = "warn"
 unreachable_pub = "allow"
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 # Pedantic lints that fight the codebase's style more than they help.
 module_name_repetitions = "allow"

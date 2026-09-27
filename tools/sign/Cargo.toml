@@ -1,0 +1,13 @@
+[package]
+name = "tvb-sign"
+version = "0.1.0"
+edition = "2024"
+description = "Release signing helper for TV-Blind (minisign, non-interactive)"
+license = "MIT"
+publish = false
+
+[dependencies]
+minisign = "0.10.0"
+
+[lints]
+workspace = true

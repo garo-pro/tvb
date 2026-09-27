@@ -56,4 +56,10 @@ cargo test -- --ignored --nocapture
 
 1. Update `version` in `Cargo.toml` and commit.
 2. Tag the commit with the same version, for example `git tag v0.2.0`, and push the tag.
-3. The Release workflow builds the app and creates a draft release with the zip file. Review it, then publish it.
+3. The Release workflow builds the app, signs `TV-Blind.zip`, and creates a draft release. Review it, then publish it. Only published releases are offered to users on the stable update channel.
+
+Every push to `main` that passes CI also rebuilds the rolling `latest` pre-release, which the development update channel follows.
+
+### Signing
+
+Update zips are signed with minisign by `tools/sign` (`tvb-sign`), which reads the key from the environment because the usual tools need an interactive console. The secret key and its password are secrets of the GitHub `release` environment, which only `main` and `v*` tags can use. The matching public key is `UPDATE_PUBLIC_KEY` in `src/config.rs`. If the key ever has to be replaced, every existing install must first receive an update signed with the old key that contains the new public key.

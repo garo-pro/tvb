@@ -13,16 +13,17 @@ TV-Blind is an independent project. It is not made or endorsed by Thingiverse. E
 - Download one file, selected files, all files, or the images of a thing. Downloads go to a folder per thing.
 - Open any thing on the Thingiverse website.
 - Sign in through your browser. Your token is kept in Windows Credential Manager.
+- Updates itself. Choose stable releases or development builds under File, Settings. Every update is checked against a signature before it is installed.
 
 ## Download and install
 
-1. Go to the [releases page](https://github.com/garo-pro/tvb/releases) and download the latest `TV-Blind-...-windows-x64.zip`.
+1. Go to the [releases page](https://github.com/garo-pro/tvb/releases) and download `TV-Blind.zip` from the latest release.
 2. Extract the zip file.
 3. Run `TV-Blind.exe`. No installer is needed.
 
 TV-Blind needs Windows 10 or later, 64-bit.
 
-By downloading or using TV-Blind you accept the [license](docs/eula.md). How the app handles your data is described in the [privacy policy](docs/privacy-policy.md). In short, it collects nothing and talks only to Thingiverse.
+By downloading or using TV-Blind you accept the [license](docs/eula.md). How the app handles your data is described in the [privacy policy](docs/privacy-policy.md). In short, it collects nothing, and talks only to Thingiverse and, to check for updates, to GitHub.
 
 ## Getting started
 
@@ -57,13 +58,13 @@ In the details window:
 - Alt+W: open the thing on the Thingiverse website
 - Escape: close
 
-The File menu has sign-in, sign-out, download folder and cache options. The Help menu has this list, the privacy policy, the third-party licenses, and a link to report problems.
+The File menu has sign-in, sign-out, settings (Ctrl+Comma) and cache options. The Help menu has this list, update checks, the privacy policy, the third-party licenses, and a link to report problems.
 
 ## Where things are stored
 
-- Downloads: `Downloads\Thingiverse`, one folder per thing. You can change this under File, Download folder.
+- Downloads: `Downloads\Thingiverse`, one folder per thing. You can change this under File, Settings.
 - Sign-in token: Windows Credential Manager, under `tvb-thingiverse`.
-- Settings: `%APPDATA%\tvb`.
+- Settings (update channel, update checks, download folder): `%APPDATA%\tvb`.
 - Temporary cache: `%LOCALAPPDATA%\tvb`. Entries are deleted after 30 days, or right away with File, Clear cache.
 
 ## License

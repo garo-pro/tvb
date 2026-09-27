@@ -56,10 +56,10 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Clippy (all targets, warnings are errors)
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Tests
-        run: cargo test --locked
+        run: cargo test --locked --workspace
       - name: Docs
-        run: cargo doc --locked --no-deps --document-private-items
+        run: cargo doc --locked --workspace --no-deps --document-private-items
       - name: Release build
         run: cargo build --locked --release

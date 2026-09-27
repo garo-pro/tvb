@@ -1,0 +1,84 @@
+name: Development build
+
+# After CI passes on main, rebuilds the rolling "latest" pre-release that the
+# updater's development channel follows. Its notes list recent commits as
+# "- <7-char hash> <subject>", newest first; the updater relies on that format.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-build
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  dev-build:
+    name: Build, sign and publish development build
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 50
+          persist-credentials: false
+
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Build
+        run: cargo build --locked --release --workspace
+
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-about@0.9.2
+
+      - name: Third-party license notices
+        run: cargo about generate --locked about.hbs -o THIRD-PARTY-LICENSES.html
+
+      - name: Package
+        shell: pwsh
+        run: ./tools/package.ps1
+
+      - name: Sign
+        env:
+          TVB_SIGNING_KEY: ${{ secrets.TVB_SIGNING_KEY }}
+          TVB_SIGNING_PASSWORD: ${{ secrets.TVB_SIGNING_PASSWORD }}
+        run: target/release/tvb-sign.exe sign dist/TV-Blind.zip
+
+      - name: Replace the rolling pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          $commits = git log -n 30 --format="%H %s" $env:HEAD_SHA | ForEach-Object {
+            $hash, $subject = $_ -split ' ', 2
+            "- $($hash.Substring(0, 7)) $subject"
+          }
+          $notes = @(
+            "Development build of $($env:HEAD_SHA.Substring(0, 7)). These builds contain the newest changes and may be unstable."
+            ""
+            "Recent changes:"
+            ""
+          ) + $commits
+          $notes -join "`n" | Out-File notes.md -Encoding utf8
+          gh release delete latest --repo "${{ github.repository }}" --cleanup-tag --yes 2>$null
+          $global:LASTEXITCODE = 0
+          gh release create latest dist/TV-Blind.zip dist/TV-Blind.zip.minisig dist/TV-Blind.zip.sha256 `
+            --repo "${{ github.repository }}" --prerelease --target $env:HEAD_SHA `
+            --title "Development build" --notes-file notes.md

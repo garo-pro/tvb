@@ -1,29 +1,35 @@
 # TV-Blind privacy policy
 
-Last updated: 27 September 2026
+Last updated: 27 September 2026 (update checks added)
 
 TV-Blind ("the app") is a free Thingiverse desktop client for blind and visually impaired people, made by [garo-pro](https://github.com/garo-pro). It is not made or endorsed by Thingiverse.
 
-In short: the app collects nothing about you. Everything it stores stays on your computer, and it talks only to Thingiverse.
+In short: the app collects nothing about you. Everything it stores stays on your computer, and it talks only to Thingiverse and, to check for updates, to GitHub.
 
 ## What the app stores, and where
 
 All of this is on your own computer. None of it is sent to the app's developer.
 
 - **Your Thingiverse access token.** It is stored in Windows Credential Manager under the name `tvb-thingiverse`. The app uses it only to talk to Thingiverse on your behalf.
-- **Settings.** Right now that is only your chosen download folder. They are stored in `%APPDATA%\tvb\config\settings.json`.
+- **Settings.** Your download folder, update channel and whether to check for updates at startup. They are stored in `%APPDATA%\tvb\config\settings.json`.
 - **A temporary cache** of search results and thing details, so that pages you just viewed open quickly. It is stored in `%LOCALAPPDATA%\tvb\cache`. Cached thing details can include the public name of the thing's creator. Entries are reused for at most one day. They are deleted automatically when they are more than 30 days old, each time the app starts. You can delete them at any time with File, Clear cache.
 - **Files you download.** They go to the folder you chose, by default `Downloads\Thingiverse`. They are yours, and the app never deletes them.
 
 ## What the app sends, and to whom
 
-The app connects only to Thingiverse (`thingiverse.com`, `api.thingiverse.com` and Thingiverse's file servers), and always over encrypted HTTPS. It sends:
+Apart from update checks (see below), the app connects only to Thingiverse (`thingiverse.com`, `api.thingiverse.com` and Thingiverse's file servers), and always over encrypted HTTPS. It sends:
 
 - your access token, to prove to Thingiverse that the request comes from you;
 - what you search for, and which things, files and images you open or download;
 - the app's name and version.
 
 Thingiverse handles this information under [its own privacy policy](https://www.thingiverse.com/legal/privacy). Files downloaded through the app may appear in your Thingiverse download history, just as they would if you downloaded them on the website.
+
+## Update checks
+
+To find out whether a newer version exists, the app asks GitHub (`api.github.com`) about the app's releases, over encrypted HTTPS. The request contains only the app's name and version. As with any internet connection, GitHub sees your IP address; its handling is described in [GitHub's privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+
+By default the app checks once when it starts. You can turn that off under File, Settings, and check by hand with Help, Check for updates. Updates are only downloaded and installed when you agree, and each download is checked against a digital signature before anything is installed.
 
 ## Signing in
 
@@ -32,7 +38,7 @@ Thingiverse handles this information under [its own privacy policy](https://www.
 ## What the app does not do
 
 - It has no analytics, telemetry, crash reporting or advertising.
-- It does not send anything to the developer or to anyone other than Thingiverse.
+- It does not send anything to the developer, or to anyone other than Thingiverse and, for update checks, GitHub.
 - It does not sell, share or transfer any data.
 - It does not change your Thingiverse account, profile or privacy settings.
 

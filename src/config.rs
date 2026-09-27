@@ -16,6 +16,11 @@ pub const EULA_URL: &str = "https://github.com/garo-pro/tvb/blob/main/docs/eula.
 /// Cached Content must be deleted after at most 30 days (API terms 4b).
 pub const CACHE_MAX_AGE: std::time::Duration = std::time::Duration::from_hours(720);
 
+/// Where updates come from, and the minisign key their zips must be signed
+/// with. The matching secret key lives only in the GitHub "release" environment.
+pub const UPDATE_REPO: &str = "garo-pro/tvb";
+pub const UPDATE_PUBLIC_KEY: &str = "RWRfw3J3Qfvn4DSdkahuDb3Jh3trSY7/96z2BX92ji3P7hMumzlcLt+t";
+
 const KEYRING_SERVICE: &str = "tvb-thingiverse";
 const KEYRING_USER: &str = "api-token";
 
@@ -23,11 +28,41 @@ pub fn project_dirs() -> Option<ProjectDirs> {
     ProjectDirs::from("", "", "tvb")
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// Which builds the updater offers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    /// Tagged releases.
+    #[default]
+    Stable,
+    /// A build of every change to the main branch.
+    Development,
+}
+
+impl UpdateChannel {
+    pub const ALL: [Self; 2] = [Self::Stable, Self::Development];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Stable => "Stable releases",
+            Self::Development => "Development builds (newest changes, may be unstable)",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Where downloads go; each thing gets its own subfolder.
     pub download_dir: Option<PathBuf>,
+    pub update_channel: UpdateChannel,
+    pub check_updates_on_startup: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { download_dir: None, update_channel: UpdateChannel::default(), check_updates_on_startup: true }
+    }
 }
 
 impl Settings {
@@ -77,5 +112,19 @@ pub fn delete_token() -> Result<(), String> {
     match entry().and_then(|e| e.delete_credential()) {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_settings_files_get_update_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"download_dir": "D:/x"}"#).unwrap();
+        assert_eq!(s.update_channel, UpdateChannel::Stable);
+        assert!(s.check_updates_on_startup);
+        let s: Settings = serde_json::from_str(r#"{"update_channel": "development"}"#).unwrap();
+        assert_eq!(s.update_channel, UpdateChannel::Development);
     }
 }

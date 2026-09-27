@@ -16,7 +16,7 @@ const SEARCH_TTL: Duration = Duration::from_mins(10);
 const DETAILS_TTL: Duration = Duration::from_hours(24);
 
 const ID_TOKEN: i32 = ID_HIGHEST + 1;
-const ID_DOWNLOAD_DIR: i32 = ID_HIGHEST + 2;
+const ID_SETTINGS: i32 = ID_HIGHEST + 2;
 const ID_OPEN_DOWNLOADS: i32 = ID_HIGHEST + 3;
 const ID_CLEAR_CACHE: i32 = ID_HIGHEST + 4;
 const ID_EXIT: i32 = ID_HIGHEST + 5;
@@ -30,6 +30,7 @@ const ID_SIGN_OUT: i32 = ID_HIGHEST + 12;
 const ID_PROJECT_PAGE: i32 = ID_HIGHEST + 13;
 const ID_PRIVACY: i32 = ID_HIGHEST + 14;
 const ID_THIRD_PARTY: i32 = ID_HIGHEST + 15;
+const ID_CHECK_UPDATES: i32 = ID_HIGHEST + 16;
 
 #[derive(Default)]
 struct State {
@@ -112,7 +113,7 @@ impl MainWindow {
             .append_item(ID_TOKEN, "Paste API &token...", "Use your own Thingiverse API token")
             .append_item(ID_SIGN_OUT, "Sign o&ut", "Forget the saved token")
             .append_separator()
-            .append_item(ID_DOWNLOAD_DIR, "Download &folder...", "Choose where downloads are saved")
+            .append_item(ID_SETTINGS, "S&ettings...\tCtrl+,", "Update channel, update checks and download folder")
             .append_item(ID_OPEN_DOWNLOADS, "&Open download folder\tCtrl+O", "Open the download folder in Explorer")
             .append_item(ID_CLEAR_CACHE, "C&lear cache", "Delete cached search results and details")
             .append_separator()
@@ -128,6 +129,7 @@ impl MainWindow {
             .append_item(ID_PROJECT_PAGE, "&Help and bug reports", "Open the project page on GitHub")
             .append_item(ID_PRIVACY, "&Privacy policy", "Open the privacy policy in your browser")
             .append_item(ID_THIRD_PARTY, "&Third-party licenses", "Licenses of the components TV-Blind is built from")
+            .append_item(ID_CHECK_UPDATES, "Check for &updates", "Look for a newer version of TV-Blind")
             .append_item(ID_ABOUT, "&About", "About this program")
             .build();
         frame.set_menu_bar(
@@ -171,7 +173,8 @@ impl MainWindow {
                 prompt_for_token(ctx);
             }
             ID_SIGN_OUT => sign_out(ctx),
-            ID_DOWNLOAD_DIR => self.choose_download_dir(),
+            ID_SETTINGS => super::settings::show(ctx),
+            ID_CHECK_UPDATES => super::updates::check(ctx, ship_shape::ui::CheckTrigger::Manual),
             ID_OPEN_DOWNLOADS => {
                 let dir = ctx.download_root();
                 let _ = std::fs::create_dir_all(&dir);
@@ -240,22 +243,6 @@ impl MainWindow {
                 }
             }
             _ => {}
-        }
-    }
-
-    fn choose_download_dir(&self) {
-        let ctx = &self.ctx;
-        let current = ctx.download_root();
-        let dlg = DirDialog::builder(&ctx.frame, "Choose the download folder", &current.to_string_lossy()).build();
-        if dlg.show_modal() != ID_OK {
-            return;
-        }
-        let Some(path) = dlg.get_path() else { return };
-        let mut settings = ctx.settings.borrow_mut();
-        settings.download_dir = Some(path.clone().into());
-        match settings.save() {
-            Ok(()) => ctx.announce(&format!("Downloads will be saved to {path}."), false),
-            Err(e) => ctx.announce(&format!("Could not save settings: {e}"), true),
         }
     }
 

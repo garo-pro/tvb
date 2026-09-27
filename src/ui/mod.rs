@@ -3,7 +3,9 @@
 
 mod details;
 mod main_window;
+mod settings;
 mod task;
+mod updates;
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -279,5 +281,6 @@ pub fn run() {
         } else {
             ctx.status("Ready. Type a search term and press Enter.");
         }
+        updates::check_on_startup(&ctx);
     });
 }
