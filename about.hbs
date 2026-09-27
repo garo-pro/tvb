@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TV-Blind third-party licenses</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+  pre { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } pre { background: #222; } a { color: #9cf; } }
+</style>
+</head>
+<body>
+<main>
+<h1>TV-Blind third-party licenses</h1>
+<p>TV-Blind is made from the open-source components below. Each heading is a license, followed by the components that use it and the full license text.</p>
+<p>TV-Blind itself is under the MIT License. Source code for TV-Blind and for Prism (MPL-2.0) is available at <a href="https://github.com/garo-pro/tvb">github.com/garo-pro/tvb</a> and <a href="https://github.com/garo-pro/prism2rust">github.com/garo-pro/prism2rust</a>.</p>
+
+<h2>Summary</h2>
+<ul>
+{{#each overview}}
+  <li>{{name}}: {{count}} components</li>
+{{/each}}
+</ul>
+
+{{#each licenses}}
+<section>
+<h2 id="license-{{@index}}">{{name}}</h2>
+<h3>Used by</h3>
+<ul>
+{{#each used_by}}
+  <li>{{#if crate.repository}}<a href="{{crate.repository}}">{{crate.name}} {{crate.version}}</a>{{else}}{{crate.name}} {{crate.version}}{{/if}}</li>
+{{/each}}
+</ul>
+<h3>License text</h3>
+<pre>{{text}}</pre>
+</section>
+{{/each}}
+</main>
+</body>
+</html>

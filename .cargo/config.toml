@@ -1,0 +1,8 @@
+[env]
+# Link Prism statically so tvb.exe needs no prism.dll next to it.
+PRISM_STATIC = "1"
+
+# Client ID of the app registered at https://www.thingiverse.com/apps/create
+# (type Desktop, callback URL http://127.0.0.1:47823/callback). Client IDs
+# are public; no secret is needed. Leave empty to offer only token pasting.
+TVB_CLIENT_ID = "f4addc8534f0f7b6d713"

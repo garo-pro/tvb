@@ -1,0 +1,18 @@
+# cargo-about: generates THIRD-PARTY-LICENSES.html for release zips.
+# Run locally with: cargo about generate about.hbs -o THIRD-PARTY-LICENSES.html
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+targets = ["x86_64-pc-windows-msvc"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+private = { ignore = true }

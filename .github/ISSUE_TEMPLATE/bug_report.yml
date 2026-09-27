@@ -1,0 +1,52 @@
+name: Bug report
+description: Something doesn't work, or is hard to use with a screen reader.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please don't include your API token or other secrets.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps, including the keys you pressed if it's about keyboard or screen reader use.
+      placeholder: |
+        1. Search for "benchy"
+        2. Press Enter on the first result
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: speech
+    attributes:
+      label: What did your screen reader say?
+      description: If relevant, what was spoken or shown in braille, and what you expected to hear.
+  - type: input
+    id: version
+    attributes:
+      label: TV-Blind version
+      description: Shown in Help, About.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: screen-reader
+    attributes:
+      label: Screen reader and version
+      description: For example NVDA 2026.3, JAWS 2026, Narrator, or none.
+      placeholder: NVDA 2026.3

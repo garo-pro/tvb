@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security problem
+    url: https://github.com/garo-pro/tvb/security/advisories/new
+    about: Please report security problems privately, not as a public issue.
+  - name: Problem with Thingiverse itself
+    url: https://www.thingiverse.com/contact
+    about: For problems with your account or the Thingiverse website, contact Thingiverse.

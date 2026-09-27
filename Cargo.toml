@@ -1,0 +1,55 @@
+[package]
+name = "tvb"
+version = "0.1.0"
+edition = "2024"
+description = "TV-Blind: a Thingiverse desktop client for blind and visually impaired people"
+repository = "https://github.com/garo-pro/tvb"
+license = "MIT"
+publish = false
+
+[dependencies]
+wxdragon = "0.9.22"
+ureq = { version = "3.4.2", default-features = false, features = ["native-tls", "gzip", "json"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.21"
+keyring = "4.2.0"
+directories = "6.0.0"
+html2text = "0.17.1"
+sanitize-filename = "0.7.0-beta"
+opener = "0.8.5"
+prism = { git = "https://github.com/garo-pro/prism2rust" }
+# Direct dependency so build.rs sees DEP_PRISM_DELAYLOAD for the static link.
+prism-sys = { git = "https://github.com/garo-pro/prism2rust" }
+
+[build-dependencies]
+embed-manifest = "1.5.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "allow"
+rust_2018_idioms = { level = "warn", priority = -1 }
+unused_qualifications = "warn"
+unreachable_pub = "allow"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Pedantic lints that fight the codebase's style more than they help.
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Stricter than the defaults.
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+unwrap_used = "warn"
+undocumented_unsafe_blocks = "warn"
+large_include_file = "warn"

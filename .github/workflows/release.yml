@@ -1,0 +1,81 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching the version in Cargo.toml) to build a
+# release. The release is created as a draft so it can be reviewed first.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  release:
+    name: Build and draft release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check tag matches Cargo.toml version
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            Write-Error "Tag ${{ github.ref_name }} does not match Cargo.toml version $version"
+            exit 1
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build
+        run: cargo build --locked --release
+
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-about@0.9.2
+
+      - name: Third-party license notices
+        run: cargo about generate --locked about.hbs -o THIRD-PARTY-LICENSES.html
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "TV-Blind-$env:VERSION-windows-x64"
+          $stage = "dist/$name"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item target/release/tvb.exe "$stage/TV-Blind.exe"
+          Copy-Item README.md, LICENSE, THIRD-PARTY-LICENSES.html, docs/privacy-policy.md, docs/eula.md $stage
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/$name.zip"
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File "dist/$name.zip.sha256" -Encoding ascii -NoNewline
+          "ASSET=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Create draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          ## Download
+
+          Download **$env:ASSET.zip**, extract it, and run **TV-Blind.exe**. No installer is needed.
+
+          By downloading or using TV-Blind you accept the [license](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/eula.md). How the app handles data is described in the [privacy policy](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/privacy-policy.md).
+
+          "@
+          gh release create "${{ github.ref_name }}" "dist/$env:ASSET.zip" "dist/$env:ASSET.zip.sha256" `
+            --repo "${{ github.repository }}" --draft --title "TV-Blind $env:VERSION" `
+            --notes "$notes" --generate-notes

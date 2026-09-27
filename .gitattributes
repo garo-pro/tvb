@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.rs diff=rust
+*.png binary
+*.ico binary
