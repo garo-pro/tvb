@@ -1,7 +1,6 @@
 //! Settings dialog: update channel, startup update check, download folder.
 
-use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use wxdragon::prelude::*;
@@ -27,11 +26,11 @@ pub fn show(ctx: &Rc<Ctx>) {
         .with_value(current.check_updates_on_startup)
         .build();
 
+    // Editable on purpose: wxMSW skips read-only single-line fields when
+    // tabbing, so screen reader users could not reach or review the path.
     let folder_label = StaticText::builder(&dlg).with_label("&Download folder:").build();
-    let folder = TextCtrl::builder(&dlg)
-        .with_value(&current.download_dir().to_string_lossy())
-        .with_style(TextCtrlStyle::ReadOnly)
-        .build();
+    let original_folder = current.download_dir().to_string_lossy().into_owned();
+    let folder = TextCtrl::builder(&dlg).with_value(&original_folder).build();
     let browse = Button::builder(&dlg).with_label("&Browse...").build();
 
     let ok = Button::builder(&dlg).with_id(ID_OK).with_label("OK").build();
@@ -40,19 +39,33 @@ pub fn show(ctx: &Rc<Ctx>) {
     dlg.set_affirmative_id(ID_OK);
     dlg.set_escape_id(ID_CANCEL);
 
-    let chosen_folder: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
-    {
-        let chosen_folder = chosen_folder.clone();
-        browse.on_click(move |_| {
-            let picker = DirDialog::builder(&dlg, "Choose the download folder", &folder.get_value()).build();
-            if picker.show_modal() == ID_OK
-                && let Some(path) = picker.get_path()
-            {
-                folder.set_value(&path);
-                *chosen_folder.borrow_mut() = Some(PathBuf::from(path));
-            }
-        });
-    }
+    browse.on_click(move |_| {
+        let picker = DirDialog::builder(&dlg, "Choose the download folder", &folder.get_value()).build();
+        if picker.show_modal() == ID_OK
+            && let Some(path) = picker.get_path()
+        {
+            folder.set_value(&path);
+        }
+        folder.set_focus();
+    });
+
+    // Keep the dialog open until the typed folder is usable.
+    ok.on_click(move |_| {
+        if parse_folder(&folder.get_value()).is_some() {
+            dlg.end_modal(ID_OK);
+        } else {
+            MessageDialog::builder(
+                &dlg,
+                "Type a full folder path, such as C:\\Users\\Name\\Downloads, or choose one with Browse.",
+                "Download folder",
+            )
+            .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconError)
+            .build()
+            .show_modal();
+            folder.set_focus();
+            folder.select_all();
+        }
+    });
 
     let folder_row = BoxSizer::builder(Orientation::Horizontal).build();
     folder_row.add(&folder, 1, SizerFlag::Expand | SizerFlag::Right, 6);
@@ -81,6 +94,7 @@ pub fn show(ctx: &Rc<Ctx>) {
         .and_then(|i| UpdateChannel::ALL.get(usize::try_from(i).ok()?).copied())
         .unwrap_or(current.update_channel);
     let new_startup = startup.is_checked();
+    let folder_text = folder.get_value();
     dlg.destroy();
     if !accepted {
         return;
@@ -89,11 +103,43 @@ pub fn show(ctx: &Rc<Ctx>) {
     let mut settings = ctx.settings.borrow_mut();
     settings.update_channel = new_channel;
     settings.check_updates_on_startup = new_startup;
-    if let Some(dir) = chosen_folder.borrow_mut().take() {
+    // Only store a folder the user changed, so the default keeps following
+    // the Windows Downloads folder.
+    if let Some(dir) = parse_folder(&folder_text)
+        && dir != Path::new(&original_folder)
+    {
         settings.download_dir = Some(dir);
     }
     match settings.save() {
         Ok(()) => ctx.announce("Settings saved.", false),
         Err(e) => ctx.announce(&format!("Could not save settings: {e}"), true),
+    }
+}
+
+/// Returns the folder typed in the dialog if it is an absolute path.
+/// Surrounding quotes, as left by Explorer's "Copy as path", are removed.
+fn parse_folder(text: &str) -> Option<PathBuf> {
+    let text = text.trim().trim_matches('"').trim();
+    let path = PathBuf::from(text);
+    (!text.is_empty() && path.is_absolute()).then_some(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_absolute_and_quoted_paths() {
+        assert_eq!(parse_folder(r" C:\Downloads\Things "), Some(PathBuf::from(r"C:\Downloads\Things")));
+        assert_eq!(parse_folder(r#""D:\3D prints""#), Some(PathBuf::from(r"D:\3D prints")));
+        assert_eq!(parse_folder(r"\\server\share\stl"), Some(PathBuf::from(r"\\server\share\stl")));
+    }
+
+    #[test]
+    fn rejects_empty_and_relative_paths() {
+        assert_eq!(parse_folder("   "), None);
+        assert_eq!(parse_folder(r#""""#), None);
+        assert_eq!(parse_folder(r"Downloads\Things"), None);
+        assert_eq!(parse_folder(r"\Downloads"), None);
     }
 }
