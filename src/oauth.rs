@@ -249,10 +249,17 @@ fn check_audience(token: &str, client_id: &str) -> Result<(), SignInError> {
         .post(TOKENINFO_URL)
         .send_form([("access_token", token)])
         .map_err(ApiError::from)?;
+    if crate::api::is_challenge(&resp) {
+        return Err(ApiError::Blocked.into());
+    }
     let status = resp.status().as_u16();
     let text = resp.body_mut().read_to_string().map_err(ApiError::from)?;
-    crate::api::check_status(status, || text.clone())?;
-    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| ApiError::Decode(e.to_string()))?;
+    parse_tokeninfo(status, &text, client_id)
+}
+
+fn parse_tokeninfo(status: u16, text: &str, client_id: &str) -> Result<(), SignInError> {
+    crate::api::check_status(status, || text.to_string())?;
+    let v: serde_json::Value = serde_json::from_str(text).map_err(|e| ApiError::Decode(e.to_string()))?;
     if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
         return Err(SignInError::Denied(err.to_string()));
     }
@@ -395,6 +402,18 @@ mod tests {
         cancel.store(true, Ordering::SeqCst);
         let r = wait_for_token(&listener, "good", &cancel, Duration::from_secs(10));
         assert!(matches!(r, Err(SignInError::Canceled)));
+    }
+
+    #[test]
+    fn tokeninfo_replies() {
+        let html = "<!DOCTYPE html><title>Just a moment...</title>";
+        assert!(matches!(parse_tokeninfo(403, html, "1"), Err(SignInError::Api(ApiError::Forbidden))));
+        assert!(matches!(parse_tokeninfo(200, html, "1"), Err(SignInError::Api(ApiError::Decode(_)))));
+        assert!(matches!(parse_tokeninfo(200, r#"{"error":"invalid token"}"#, "1"), Err(SignInError::Denied(_))));
+        assert!(parse_tokeninfo(200, r#"{"audience":1}"#, "1").is_ok());
+        assert!(parse_tokeninfo(200, r#"{"audience":"1"}"#, "1").is_ok());
+        assert!(matches!(parse_tokeninfo(200, r#"{"audience":"2"}"#, "1"), Err(SignInError::WrongApp)));
+        assert!(matches!(parse_tokeninfo(200, "{}", "1"), Err(SignInError::WrongApp)));
     }
 
     /// `cargo test -- --ignored live_tokeninfo`. Catches the tokeninfo host
