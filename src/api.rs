@@ -34,6 +34,8 @@ pub enum ApiError {
     Io(#[from] io::Error),
     #[error("This file has no download link.")]
     NoDownloadUrl,
+    #[error("Thingiverse's bot protection blocked the request. Try again later; if it persists, please report it.")]
+    Blocked,
 }
 
 impl From<ureq::Error> for ApiError {
@@ -61,7 +63,11 @@ pub(crate) fn agent(recv_timeout: Option<Duration>) -> Agent {
 }
 
 fn agent_with_redirects(recv_timeout: Option<Duration>, max_redirects: u32) -> Agent {
-    let tls = TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build();
+    // rustls, not native-tls: Cloudflare in front of Thingiverse filters bots
+    // by TLS handshake fingerprint (JA3/JA4) and answers the Schannel
+    // handshake from native-tls with a 403 challenge page. rustls passes
+    // today but could be filtered too; `is_challenge` reports that case.
+    let tls = TlsConfig::builder().provider(TlsProvider::Rustls).root_certs(RootCerts::PlatformVerifier).build();
     Agent::config_builder()
         .tls_config(tls)
         .max_redirects(max_redirects)
@@ -103,7 +109,12 @@ fn error_message(body: &str) -> String {
     if text.starts_with('<') || text.is_empty() { "no details".to_string() } else { text.chars().take(200).collect() }
 }
 
-fn check_status(status: u16, body: impl FnOnce() -> String) -> Result<()> {
+/// Cloudflare marks challenge pages with `cf-mitigated: challenge`.
+pub(crate) fn is_challenge<B>(resp: &ureq::http::Response<B>) -> bool {
+    resp.headers().get("cf-mitigated").is_some_and(|v| v == "challenge")
+}
+
+pub(crate) fn check_status(status: u16, body: impl FnOnce() -> String) -> Result<()> {
     match status {
         200..=299 => Ok(()),
         401 => Err(ApiError::Unauthorized),
@@ -141,6 +152,9 @@ impl Client {
             req = req.query(*k, v);
         }
         let mut resp = req.call()?;
+        if is_challenge(&resp) {
+            return Err(ApiError::Blocked);
+        }
         let status = resp.status().as_u16();
         let text = resp.body_mut().with_config().limit(20 * 1024 * 1024).read_to_string()?;
         check_status(status, || text.clone())?;
@@ -276,6 +290,9 @@ impl Client {
         }
         let mut resp = resp.ok_or_else(|| ApiError::Network("too many redirects".into()))?;
 
+        if is_challenge(&resp) {
+            return Err(ApiError::Blocked);
+        }
         check_status(resp.status().as_u16(), String::new)?;
         if resp.body().mime_type() == Some("text/html") {
             // A web page (login wall, etc.), not the file.
@@ -344,6 +361,28 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_errors() {
+        assert!(check_status(200, String::new).is_ok());
+        assert!(matches!(check_status(401, String::new), Err(ApiError::Unauthorized)));
+        assert!(matches!(check_status(403, String::new), Err(ApiError::Forbidden)));
+        let html = || "<!DOCTYPE html><title>Just a moment...</title>".to_string();
+        assert!(
+            matches!(check_status(500, html), Err(ApiError::Http { status: 500, message }) if message == "no details")
+        );
+        let json = || r#"{"error":"boom"}"#.to_string();
+        assert!(matches!(check_status(500, json), Err(ApiError::Http { message, .. }) if message == "boom"));
+    }
+
+    #[test]
+    fn detects_cloudflare_challenge() {
+        let challenge =
+            ureq::http::Response::builder().status(403).header("cf-mitigated", "challenge").body(()).unwrap();
+        assert!(is_challenge(&challenge));
+        let plain = ureq::http::Response::builder().status(403).body(()).unwrap();
+        assert!(!is_challenge(&plain));
+    }
 
     #[test]
     fn encodes_path_segment() {
