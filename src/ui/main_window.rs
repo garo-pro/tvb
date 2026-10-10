@@ -5,15 +5,19 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use wxdragon::prelude::*;
+use wxdragon::timer::Timer;
 
 use super::{Ctx, details, prompt_for_token, sign_out, start_sign_in, task};
 use crate::api::ApiError;
-use crate::config;
+use crate::config::{self, SearchSort};
 use crate::models::{SearchPage, Thing, ThingDetails};
 
 const PER_PAGE: u32 = 30;
 const SEARCH_TTL: Duration = Duration::from_mins(10);
 const DETAILS_TTL: Duration = Duration::from_hours(24);
+/// Wait this long after the sort order changes before searching again, so
+/// arrowing through the choices does not start a search for each one.
+const SORT_DELAY_MS: i32 = 600;
 
 const ID_TOKEN: i32 = ID_HIGHEST + 1;
 const ID_SETTINGS: i32 = ID_HIGHEST + 2;
@@ -35,6 +39,7 @@ const ID_CHECK_UPDATES: i32 = ID_HIGHEST + 16;
 #[derive(Default)]
 struct State {
     term: String,
+    sort: SearchSort,
     page: u32,
     has_more: bool,
     total: Option<u64>,
@@ -46,6 +51,8 @@ struct State {
 pub struct MainWindow {
     ctx: Rc<Ctx>,
     search: TextCtrl,
+    sort: Choice,
+    sort_timer: Timer<Frame>,
     results_label: StaticText,
     list: ListCtrl,
     more: Button,
@@ -55,6 +62,7 @@ pub struct MainWindow {
 const SHORTCUTS: &str = "Main window:
 Alt+T or Ctrl+F: search field
 Alt+S or Enter in the search field: search
+Alt+Y: sort order; changing it sorts the current search again
 Alt+R or Ctrl+R: results list
 Enter on a result, or Alt+O: open details
 Alt+M or Ctrl+M: more results
@@ -82,6 +90,14 @@ impl MainWindow {
         let search = TextCtrl::builder(&panel).with_style(TextCtrlStyle::ProcessEnter).build();
         let search_btn = Button::builder(&panel).with_label("&Search").build();
 
+        let sort_label = StaticText::builder(&panel).with_label("Sort b&y:").build();
+        let sort = Choice::builder(&panel)
+            .with_choices(SearchSort::ALL.iter().map(|s| s.label().to_string()).collect())
+            .build();
+        let saved_sort = ctx.settings.borrow().search_sort;
+        let selected = SearchSort::ALL.iter().position(|s| *s == saved_sort).unwrap_or(0);
+        sort.set_selection(u32::try_from(selected).unwrap_or(0));
+
         let results_label = StaticText::builder(&panel).with_label("&Results:").build();
         let list = ListCtrl::builder(&panel).with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel).build();
         list.insert_column(0, "Name", ListColumnFormat::Left, 420);
@@ -95,7 +111,9 @@ impl MainWindow {
         let top = BoxSizer::builder(Orientation::Horizontal).build();
         top.add(&search_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, 6);
         top.add(&search, 1, SizerFlag::Expand | SizerFlag::Right, 6);
-        top.add(&search_btn, 0, SizerFlag::AlignCenterVertical, 0);
+        top.add(&search_btn, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, 12);
+        top.add(&sort_label, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, 6);
+        top.add(&sort, 0, SizerFlag::AlignCenterVertical, 0);
 
         let buttons = BoxSizer::builder(Orientation::Horizontal).build();
         buttons.add(&open_btn, 0, SizerFlag::Right, 6);
@@ -136,7 +154,16 @@ impl MainWindow {
             MenuBar::builder().append(file_menu, "&File").append(nav_menu, "&Go").append(help_menu, "&Help").build(),
         );
 
-        let this = Rc::new(Self { ctx, search, results_label, list, more, state: RefCell::new(State::default()) });
+        let this = Rc::new(Self {
+            ctx,
+            search,
+            sort,
+            sort_timer: Timer::new(&frame),
+            results_label,
+            list,
+            more,
+            state: RefCell::new(State::default()),
+        });
 
         let w = this.clone();
         search.on_text_enter(move |_| w.start_search());
@@ -148,6 +175,10 @@ impl MainWindow {
         open_btn.on_click(move |_| w.open_selected());
         let w = this.clone();
         more.on_click(move |_| w.load_more());
+        let w = this.clone();
+        sort.on_selection_changed(move |_| w.on_sort_changed());
+        let w = this.clone();
+        this.sort_timer.on_tick(move |_| w.resort());
 
         let w = this.clone();
         frame.on_menu(move |e| w.on_menu(e.get_id()));
@@ -263,16 +294,57 @@ impl MainWindow {
         self.list.ensure_visible(row);
     }
 
+    fn selected_sort(&self) -> SearchSort {
+        self.sort
+            .get_selection()
+            .and_then(|i| SearchSort::ALL.get(usize::try_from(i).ok()?).copied())
+            .unwrap_or_default()
+    }
+
+    fn on_sort_changed(&self) {
+        let sort = self.selected_sort();
+        {
+            let mut settings = self.ctx.settings.borrow_mut();
+            if settings.search_sort != sort {
+                settings.search_sort = sort;
+                if let Err(e) = settings.save() {
+                    drop(settings);
+                    self.ctx.announce(&format!("Could not save the sort order: {e}"), true);
+                }
+            }
+        }
+        if !self.state.borrow().term.is_empty() {
+            self.sort_timer.start(SORT_DELAY_MS, true);
+        }
+    }
+
+    /// Runs the last search again in the newly chosen order.
+    fn resort(self: &Rc<Self>) {
+        let (term, sort) = {
+            let s = self.state.borrow();
+            (s.term.clone(), s.sort)
+        };
+        if !term.is_empty() && sort != self.selected_sort() {
+            self.run_search(term);
+        }
+    }
+
     fn start_search(self: &Rc<Self>) {
         let term = self.search.get_value().trim().to_string();
         if term.is_empty() {
             self.ctx.announce("Type something to search for.", true);
             return;
         }
+        self.sort_timer.stop();
+        self.run_search(term);
+    }
+
+    fn run_search(self: &Rc<Self>, term: String) {
         {
             let mut s = self.state.borrow_mut();
             s.generation += 1;
             s.term.clone_from(&term);
+            s.sort = self.selected_sort();
             s.page = 0;
             s.things.clear();
             s.has_more = false;
@@ -281,37 +353,42 @@ impl MainWindow {
         self.list.delete_all_items();
         self.results_label.set_label("&Results:");
         self.more.enable(false);
-        self.fetch_page(term, 1);
+        let sort = self.state.borrow().sort;
+        self.fetch_page(term, sort, 1);
     }
 
     fn load_more(self: &Rc<Self>) {
-        let (term, page, has_more) = {
+        let (term, sort, page, has_more) = {
             let s = self.state.borrow();
-            (s.term.clone(), s.page + 1, s.has_more)
+            (s.term.clone(), s.sort, s.page + 1, s.has_more)
         };
         if !has_more {
             self.ctx.announce("No more results.", true);
             return;
         }
-        self.fetch_page(term, page);
+        self.fetch_page(term, sort, page);
     }
 
-    fn fetch_page(self: &Rc<Self>, term: String, page: u32) {
+    fn fetch_page(self: &Rc<Self>, term: String, sort: SearchSort, page: u32) {
         let Some(client) = self.ctx.client() else { return };
         let generation = self.state.borrow().generation;
         self.ctx.announce(
-            &if page == 1 { format!("Searching for {term}...") } else { format!("Loading page {page}...") },
+            &match (page, sort) {
+                (1, SearchSort::Relevant) => format!("Searching for {term}..."),
+                (1, _) => format!("Searching for {term}, sorted by {}...", sort.label().to_lowercase()),
+                _ => format!("Loading page {page}..."),
+            },
             false,
         );
         let cache = self.ctx.cache.clone();
-        let key = format!("{}-p{page}-n{PER_PAGE}", term.to_lowercase());
+        let key = format!("{}-{}-p{page}-n{PER_PAGE}", term.to_lowercase(), sort.api_value());
         let w = self.clone();
         task::background(
             move || {
                 if let Some(hit) = cache.get::<SearchPage>("search", &key, SEARCH_TTL) {
                     return Ok(hit);
                 }
-                let r = client.search_things(&term, page, PER_PAGE);
+                let r = client.search_things(&term, sort, page, PER_PAGE);
                 if let Ok(p) = &r {
                     cache.put("search", &key, p);
                 }

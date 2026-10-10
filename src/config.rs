@@ -50,6 +50,40 @@ impl UpdateChannel {
     }
 }
 
+/// Result order for searches, as offered by the Thingiverse search API.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchSort {
+    #[default]
+    Relevant,
+    Popular,
+    Makes,
+    Newest,
+}
+
+impl SearchSort {
+    pub const ALL: [Self; 4] = [Self::Relevant, Self::Popular, Self::Makes, Self::Newest];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Relevant => "Relevance",
+            Self::Popular => "Most popular",
+            Self::Makes => "Most makes",
+            Self::Newest => "Newest",
+        }
+    }
+
+    /// The `sort` query value the API expects.
+    pub fn api_value(self) -> &'static str {
+        match self {
+            Self::Relevant => "relevant",
+            Self::Popular => "popular",
+            Self::Makes => "makes",
+            Self::Newest => "newest",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -57,11 +91,18 @@ pub struct Settings {
     pub download_dir: Option<PathBuf>,
     pub update_channel: UpdateChannel,
     pub check_updates_on_startup: bool,
+    /// Last sort order chosen in the main window.
+    pub search_sort: SearchSort,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { download_dir: None, update_channel: UpdateChannel::default(), check_updates_on_startup: true }
+        Self {
+            download_dir: None,
+            update_channel: UpdateChannel::default(),
+            check_updates_on_startup: true,
+            search_sort: SearchSort::default(),
+        }
     }
 }
 
@@ -124,7 +165,17 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"download_dir": "D:/x"}"#).unwrap();
         assert_eq!(s.update_channel, UpdateChannel::Stable);
         assert!(s.check_updates_on_startup);
+        assert_eq!(s.search_sort, SearchSort::Relevant);
         let s: Settings = serde_json::from_str(r#"{"update_channel": "development"}"#).unwrap();
         assert_eq!(s.update_channel, UpdateChannel::Development);
+    }
+
+    #[test]
+    fn search_sort_round_trips_and_matches_api_values() {
+        for sort in SearchSort::ALL {
+            let json = serde_json::to_string(&sort).unwrap();
+            assert_eq!(json, format!("\"{}\"", sort.api_value()));
+            assert_eq!(serde_json::from_str::<SearchSort>(&json).unwrap(), sort);
+        }
     }
 }

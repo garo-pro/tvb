@@ -10,6 +10,7 @@ use serde::de::DeserializeOwned;
 use ureq::Agent;
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 
+use crate::config::SearchSort;
 use crate::models::{Image, SearchPage, Thing, ThingDetails, ThingFile, User, lenient_vec};
 
 pub const BASE_URL: &str = "https://api.thingiverse.com";
@@ -162,7 +163,7 @@ impl Client {
     }
 
     /// `GET /search/{term}/?type=things`. `page` is 1-based.
-    pub fn search_things(&self, term: &str, page: u32, per_page: u32) -> Result<SearchPage> {
+    pub fn search_things(&self, term: &str, sort: SearchSort, page: u32, per_page: u32) -> Result<SearchPage> {
         let path = format!("/search/{}/", encode_segment(term.trim()));
         let v: serde_json::Value = self.get_json(
             &path,
@@ -170,7 +171,7 @@ impl Client {
                 ("type", "things".into()),
                 ("page", page.to_string()),
                 ("per_page", per_page.to_string()),
-                ("sort", "relevant".into()),
+                ("sort", sort.api_value().into()),
             ],
         )?;
         // Documented shape is {total, hits}; older endpoints return a bare array.
@@ -416,7 +417,7 @@ mod tests {
     #[ignore = "needs network"]
     fn live_bad_token_is_unauthorized() {
         let started = std::time::Instant::now();
-        let r = Client::new("not-a-real-token").search_things("benchy", 1, 1);
+        let r = Client::new("not-a-real-token").search_things("benchy", SearchSort::Relevant, 1, 1);
         assert!(matches!(r, Err(ApiError::Unauthorized)), "{r:?}");
         println!("took {:?}", started.elapsed());
     }
@@ -442,9 +443,15 @@ mod tests {
         }
         println!("  images: {}", d.images.len());
 
-        let s = c.search_things("benchy", 1, 5).expect("search");
+        let s = c.search_things("benchy", SearchSort::Relevant, 1, 5).expect("search");
         println!("search total {:?}, got {}", s.total, s.hits.len());
         assert!(!s.hits.is_empty());
+        for sort in SearchSort::ALL {
+            let s = c.search_things("benchy", sort, 1, 10).expect("sorted search");
+            let likes: Vec<_> = s.hits.iter().map(|t| t.like_count.unwrap_or_default()).collect();
+            println!("sort {}: likes {likes:?}", sort.api_value());
+            assert!(!s.hits.is_empty(), "sort {} returned nothing", sort.api_value());
+        }
 
         let dir = std::env::temp_dir().join("tvb-live-test");
         let _ = fs::remove_dir_all(&dir);

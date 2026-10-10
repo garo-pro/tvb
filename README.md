@@ -8,7 +8,7 @@ TV-Blind is an independent project. It is not made or endorsed by Thingiverse. E
 
 ## Features
 
-- Search Thingiverse and browse results in a list with name, creator and number of likes.
+- Search Thingiverse and browse results in a list with name, creator and number of likes. Sort them by relevance, most popular, most makes or newest.
 - Read a thing's description and instructions as plain text, without web page clutter.
 - Download one file, selected files, all files, or the images of a thing. Downloads go to a folder per thing.
 - Open any thing on the Thingiverse website.
@@ -43,6 +43,7 @@ In the main window:
 
 - Alt+T: search field (Ctrl+F also works)
 - Alt+S: search
+- Alt+Y: sort order. Changing it sorts the current search again, and TV-Blind remembers it.
 - Alt+R or Ctrl+R: results list
 - Enter on a result, or Alt+O: open details
 - Alt+M or Ctrl+M: load more results
@@ -64,7 +65,7 @@ The File menu has sign-in, sign-out, settings (Ctrl+Comma) and cache options. Th
 
 - Downloads: `Downloads\Thingiverse`, one folder per thing. You can change this under File, Settings.
 - Sign-in token: Windows Credential Manager, under `tvb-thingiverse`.
-- Settings (update channel, update checks, download folder): `%APPDATA%\tvb`.
+- Settings (update channel, update checks, download folder, sort order): `%APPDATA%\tvb`.
 - Temporary cache: `%LOCALAPPDATA%\tvb`. Entries are deleted after 30 days, or right away with File, Clear cache.
 
 ## License
