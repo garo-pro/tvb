@@ -249,7 +249,9 @@ fn check_audience(token: &str, client_id: &str) -> Result<(), SignInError> {
         .post(TOKENINFO_URL)
         .send_form([("access_token", token)])
         .map_err(ApiError::from)?;
+    let status = resp.status().as_u16();
     let text = resp.body_mut().read_to_string().map_err(ApiError::from)?;
+    crate::api::check_status(status, || text.clone())?;
     let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| ApiError::Decode(e.to_string()))?;
     if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
         return Err(SignInError::Denied(err.to_string()));
@@ -393,5 +395,14 @@ mod tests {
         cancel.store(true, Ordering::SeqCst);
         let r = wait_for_token(&listener, "good", &cancel, Duration::from_secs(10));
         assert!(matches!(r, Err(SignInError::Canceled)));
+    }
+
+    /// `cargo test -- --ignored live_tokeninfo`. Catches the tokeninfo host
+    /// answering with something other than JSON (e.g. a bot challenge page).
+    #[test]
+    #[ignore = "needs network"]
+    fn live_tokeninfo_rejects_bad_token() {
+        let r = check_audience("not-a-real-token", "0");
+        assert!(matches!(r, Err(SignInError::Denied(_))), "{r:?}");
     }
 }

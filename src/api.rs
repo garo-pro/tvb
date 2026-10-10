@@ -61,7 +61,9 @@ pub(crate) fn agent(recv_timeout: Option<Duration>) -> Agent {
 }
 
 fn agent_with_redirects(recv_timeout: Option<Duration>, max_redirects: u32) -> Agent {
-    let tls = TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build();
+    // rustls, not native-tls: Thingiverse's Cloudflare front answers the
+    // Schannel handshake from native-tls with a 403 bot challenge page.
+    let tls = TlsConfig::builder().provider(TlsProvider::Rustls).root_certs(RootCerts::PlatformVerifier).build();
     Agent::config_builder()
         .tls_config(tls)
         .max_redirects(max_redirects)
@@ -103,7 +105,7 @@ fn error_message(body: &str) -> String {
     if text.starts_with('<') || text.is_empty() { "no details".to_string() } else { text.chars().take(200).collect() }
 }
 
-fn check_status(status: u16, body: impl FnOnce() -> String) -> Result<()> {
+pub(crate) fn check_status(status: u16, body: impl FnOnce() -> String) -> Result<()> {
     match status {
         200..=299 => Ok(()),
         401 => Err(ApiError::Unauthorized),
